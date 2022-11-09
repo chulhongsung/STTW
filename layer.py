@@ -54,6 +54,7 @@ def scaled_dot_product_attention(q, k, v, d_model, mask):
     output = tf.matmul(attention_weights, v)  # (..., seq_len_q, depth_v)
 
     return output, attention_weights
+
 class GLULN(K.layers.Layer):
     def __init__(self, d_model):
         super(GLULN, self).__init__()    
