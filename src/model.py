@@ -2,7 +2,7 @@ import numpy as np
 import tensorflow as tf
 from tensorflow import keras as K
 
-from layer import *
+from src.layer import *
 
 class SpatialTemporalTransformer(K.models.Model):
     """
