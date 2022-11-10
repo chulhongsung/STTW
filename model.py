@@ -5,6 +5,22 @@ from tensorflow import keras as K
 from layer import *
 
 class SpatialTemporalTransformer(K.models.Model):
+    """
+    Spatio-Temporal Transformer
+
+    Args:
+        d_model (int): hidden feature size
+        d_embedding (int): embedding size of continuous and categorical variables
+        cate_dims (list): the number of category of categorical variables, e.g., [12, 31, 24] (month, day, hour)
+        spatial_structure (list): masking index for get_spatial_mask
+        d_input (int): the number of input variables (conti + cate)
+        seq_len (int): the length of input sequence
+        num_targets (int): the number of targets
+        tau (int): the length of target sequence
+        quantile (list): target quantile levels
+        num_heads (int): the number of heads in multihead attenion layer
+        dr (float): dropout rate
+    """
     def __init__(
         self, 
         d_model,
@@ -13,7 +29,7 @@ class SpatialTemporalTransformer(K.models.Model):
         spatial_structure,
         d_input,
         seq_len,
-        num_target,
+        num_targets,
         tau,
         quantile,
         num_heads,
@@ -30,7 +46,7 @@ class SpatialTemporalTransformer(K.models.Model):
         self.tsa = TemporalStructureAttention(d_model, num_heads, seq_len)
         self.std = SpatialTemporalDecoder(d_model, dr, num_heads)
         self.pwff = PointWiseFeedForward(d_model, dr)
-        self.tfl = TargetFeatureLayer(d_model, num_target)
+        self.tfl = TargetFeatureLayer(d_model, num_targets)
         self.qo = QuantileOutput(tau, quantile)
         
     @tf.function
