@@ -1,5 +1,7 @@
 import numpy as np
 import pandas as pd
+import tensorflow as tf
+from tensorflow import keras as K
 
 def generate_ts_data(df, label_df, input_seq_len=144, tau=48):
     
@@ -38,3 +40,20 @@ def generate_ts_data(df, label_df, input_seq_len=144, tau=48):
     total_label = np.concatenate(label_list, axis=0)
     
     return total_conti_input, total_cate_input, total_future_input, total_label
+
+class QuantileRisk(K.losses.Loss):
+    def __init__(self, tau, quantile, num_target):
+        super(QuantileRisk, self).__init__()
+        self.quantile = quantile 
+        self.q_arr = tf.repeat(tf.expand_dims(tf.repeat(tf.expand_dims(quantile, axis=0)[..., tf.newaxis], tau, axis=-1), 1), num_target, axis=1) # (batch_size, num_target, quantile_len, tau)
+
+    def call(self, true, pred):
+        true = tf.cast(true, tf.float32)
+        true_rep = tf.repeat(tf.expand_dims(true, -1), len(self.quantile), axis=-1) # (batch_size, tau, num_target, quantile_len)
+        true_rep = tf.transpose(true_rep, perm=[0, 2, 3, 1]) # (batch_size, num_target, quantile_len, tau)
+        
+        pred = tf.transpose(pred, perm=[0, 2, 3, 1])
+        
+        ql = tf.maximum(self.q_arr * (true_rep - pred), (1-self.q_arr) * (pred - true_rep) )
+        
+        return tf.reduce_mean(ql)
