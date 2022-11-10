@@ -29,14 +29,14 @@ class CateFeatureEmbedding(K.layers.Layer):
     def call(self, x):
         return tf.expand_dims(self.embedding_layer(x), axis=2)
     
-def get_spatial_weight(spatial_structure: list) -> tf.float32:
+def get_spatial_mask(spatial_structure: list) -> tf.float32:
     cumsum = np.cumsum(spatial_structure)
-    spatial_weight = np.ones((cumsum[-1], cumsum[-1]), dtype=np.float32)
+    spatial_mask = np.ones((cumsum[-1], cumsum[-1]), dtype=np.float32)
 
     for j in cumsum.tolist():
-        spatial_weight[:j, j:] = 0.
+        spatial_mask[:j, j:] = 0.
     
-    return tf.constant(spatial_weight, tf.float32)
+    return tf.constant(spatial_mask, tf.float32)
 
 def scaled_dot_product_attention(q, k, v, d_model, mask):
     matmul_qk = tf.matmul(q, k, transpose_b=True)  # (..., seq_len_q, seq_len_k)
@@ -114,7 +114,7 @@ class SpatialStructureAttention(K.layers.Layer):
     def __init__(self, d_model: int, num_heads: int, spatial_structure: list):
         super(SpatialStructureAttention, self).__init__()
         self.d_embeddint = d_model
-        self.spatial_structure = get_spatial_weight(spatial_structure)
+        self.spatial_structure = get_spatial_mask(spatial_structure)
         self.num_heads = num_heads
         self.d_model = d_model
 
