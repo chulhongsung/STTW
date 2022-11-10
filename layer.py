@@ -315,6 +315,20 @@ class PointWiseFeedForward(K.layers.Layer):
             
         return varphi
 
+class TargetFeatureLayer(K.layers.Layer):
+    def __init__(self, d_model, num_target):
+        super(TargetFeatureLayer, self).__init__()
+        self.num_target = num_target
+        self.target_feature_dense = [K.layers.Dense(d_model) for _ in range(num_target)]
+
+    def call(self, varphi):
+        target_feature_list = []
+        for i in range(self.num_target):
+            tmp_target_feature = self.target_feature_dense[i](varphi)
+            target_feature_list.append(tf.expand_dims(tmp_target_feature, -2))
+
+        return tf.concat(target_feature_list, axis=-2)
+
 class QuantileOutput(K.layers.Layer):
     def __init__(self, tau, quantile):
         super(QuantileOutput, self).__init__()
@@ -327,9 +341,9 @@ class QuantileOutput(K.layers.Layer):
         for j in range(len(self.quantile)):
             tmp_quantile_list = []
             for t in range(self.tau):
-                tmp_quantile = self.quantile_dense[j](varphi[:, -self.tau + t, :])
+                tmp_quantile = self.quantile_dense[j](varphi[:, -self.tau + t, ...])
                 tmp_quantile_list.append(tf.expand_dims(tmp_quantile, axis=1))
-            total_output_list.append(tf.transpose(tf.concat(tmp_quantile_list, axis=1), perm=[0, 2, 1]))
+            total_output_list.append(tf.concat(tmp_quantile_list, axis=1))
 
-        return tf.concat(total_output_list, axis=1)
+        return tf.concat(total_output_list, axis=-1)
     
