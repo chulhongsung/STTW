@@ -1,6 +1,7 @@
 import numpy as np
 import tensorflow as tf
 from tensorflow import keras as K
+from src.utils import *
 
 class ContiFeatureEmbedding(K.layers.Layer):
     def __init__(self, d_embedding, num_rv):
@@ -29,39 +30,13 @@ class CateFeatureEmbedding(K.layers.Layer):
     def call(self, x):
         return tf.expand_dims(self.embedding_layer(x), axis=2)
     
-def get_spatial_mask(spatial_structure: list) -> tf.float32:
-    cumsum = np.cumsum(spatial_structure)
-    spatial_mask = np.ones((cumsum[-1], cumsum[-1]), dtype=np.float32)
-
-    for j in cumsum.tolist():
-        spatial_mask[:j, j:] = 0.
-    
-    return tf.constant(spatial_mask, tf.float32)
-
-def scaled_dot_product_attention(q, k, v, d_model, mask):
-    matmul_qk = tf.matmul(q, k, transpose_b=True)  # (..., seq_len_q, seq_len_k)
-
-    # scale matmul_qk
-    dk = tf.cast(d_model, tf.float32)
-    scaled_attention_logits = matmul_qk / tf.math.sqrt(dk)
-
-    # add the mask to the scaled tensor.
-    if mask is not None:
-        scaled_attention_logits = scaled_attention_logits + ((1 - mask) * -1e9)
-
-    attention_weights = tf.nn.softmax(scaled_attention_logits, axis=-1)  # (..., seq_len_q, seq_len_k)
-
-    output = tf.matmul(attention_weights, v)  # (..., seq_len_q, depth_v)
-
-    return output, attention_weights
-
 class GLULN(K.layers.Layer):
     def __init__(self, d_model):
         super(GLULN, self).__init__()    
         self.dense1 = K.layers.Dense(d_model, activation='sigmoid')
         self.dense2 = K.layers.Dense(d_model)
         self.layer_norm = K.layers.LayerNormalization()
-        
+
     def call(self, x, y):
         return self.layer_norm(tf.keras.layers.Multiply()([self.dense1(x),
                                         self.dense2(x)]) + y)
@@ -73,7 +48,6 @@ class GatedResidualNetwork(K.layers.Layer):
         self.dense2 = K.layers.Dense(d_model)
         self.dropout = tf.keras.layers.Dropout(dr)
         self.glu_and_layer_norm = GLULN(d_model)
-        
         
     def call(self, a):
         eta_2 = self.dense1(a)
@@ -113,7 +87,6 @@ class VariableSelectionNetwork(K.layers.Layer):
 class SpatialStructureAttention(K.layers.Layer):
     def __init__(self, d_model: int, num_heads: int, spatial_structure: list):
         super(SpatialStructureAttention, self).__init__()
-        self.d_embeddint = d_model
         self.spatial_structure = get_spatial_mask(spatial_structure)
         self.num_heads = num_heads
         self.d_model = d_model
@@ -133,27 +106,14 @@ class SpatialStructureAttention(K.layers.Layer):
         return tf.transpose(x, perm=[0, 1, 3, 2, 4])
 
     def call(self, q, k, v):
-        batch_size = tf.shape(q)[0] 
-        seq_len = tf.shape(q)[1]
         q = self.wq(q)  # (batch_size, seq_len, num_var, d_model)
         k = self.wk(k)  # (batch_size, seq_len, num_var, d_model)
         v = self.wv(v)  # (batch_size, seq_len, num_var, d_model)
 
-        q = self.split_heads(q, batch_size, seq_len)  # (batch_size, seq_len_q, num_heads, num_var, depth)
-        k = self.split_heads(k, batch_size, seq_len)  # (batch_size, seq_len_k, num_heads, num_var, depth)
-        v = self.split_heads(v, batch_size, seq_len)  # (batch_size, seq_len_v, num_heads, num_var, depth)
-
-        # scaled_attention.shape == (batch_size, num_heads, seq_len_q, depth)
-        # attention_weights.shape == (batch_size, num_heads, seq_len_q, seq_len_k)
         scaled_attention, attention_weights = scaled_dot_product_attention(
             q, k, v, self.d_model, self.spatial_structure)
 
-        scaled_attention = tf.transpose(scaled_attention, perm=[0, 1, 3, 2, 4])  # (batch_size, seq_len_q, num_var, num_heads, depth)
-
-        concat_attention = tf.reshape(scaled_attention,
-                                        (batch_size, seq_len, -1, self.d_model))  # (batch_size, seq_len_q, num_var, d_model)
-
-        output = self.dense(concat_attention)  # (batch_size, seq_len_q, num_var, d_model)
+        output = self.dense(scaled_attention)  # (batch_size, seq_len_q, num_var, d_model)
 
         return output, attention_weights
     
@@ -264,8 +224,8 @@ class SpatialTemporalDecoder(K.layers.Layer):
         
         future_lstm = self.lstm_future(vsn_future, initial_state=[vsn_observed[:, -1, :], vsn_observed[:, -1, :]])
         
-        lstm_hidden = tf.concat([vsn_observed, future_lstm], axis=1)    
-        input_vsn = tf.concat([vsn_observed, vsn_future], axis=1)
+        lstm_hidden = tf.concat([future_lstm, vsn_observed], axis=1)    
+        input_vsn = tf.concat([vsn_future, vsn_observed], axis=1)
         
         glu_phi_list = [] 
         
